@@ -1,27 +1,24 @@
 import 'package:flutter/material.dart';
 
 class AccessibilitySettings {
-  double fontSizeController;
-  bool isContrast;
+  ValueNotifier<double> fontSizeController;
+  ValueNotifier<bool> isContrast;
 
   AccessibilitySettings({
-    this.fontSizeController = 1.0,
-    this.isContrast = false,
-  });
+    double initialFontSize = 1.0,
+    bool initialIsContrast = false,
+  })  : fontSizeController = ValueNotifier<double>(initialFontSize),
+        isContrast = ValueNotifier<bool>(initialIsContrast);
 }
 
 class AccessibilityController extends InheritedWidget {
   final AccessibilitySettings settings;
-  final Function(double) updateFontSize;
-  final Function() toggleHighContrast;
 
-  AccessibilityController({
-    Key? key,
+  const AccessibilityController({
+    super.key,
     required this.settings,
-    required this.updateFontSize,
-    required this.toggleHighContrast,
-    required Widget child,
-  }) : super(key: key, child: child);
+    required super.child,
+  });
 
   //Sempre Notificando(true) a arvore de InheritedWidget que ouve uma alteração no antigo widget que estava buildado
   //os widgets dependentes serão reconstruídos para refletir essas mudanças. Garantindo que as atualizações
@@ -41,47 +38,33 @@ void main() {
   runApp(MyApp());
 }
 
-class MyApp extends StatefulWidget {
-  @override
-  _MyAppState createState() => _MyAppState();
-}
-
-class _MyAppState extends State<MyApp> {
-  AccessibilitySettings settings = AccessibilitySettings();
-
-  void updateFontSize(double multiplier) {
-    setState(() {
-      settings.fontSizeController = multiplier;
-    });
-  }
-
-  void toggleHighContrast() {
-    setState(() {
-      settings.isContrast = !settings.isContrast;
-    });
-  }
-
+class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AccessibilityController(
-      settings: settings,
-      updateFontSize: updateFontSize,
-      toggleHighContrast: toggleHighContrast,
+      settings: AccessibilitySettings(),
       child: Builder(
         builder: (context) {
-          final accessibilitySettings =
-              AccessibilityController.of(context)!.settings;
-          return MaterialApp(
-            theme: CustomTheme()
-                .lightTheme(
-                    isContrast: AccessibilityController.of(context)!
-                        .settings
-                        .isContrast)
-                .copyWith(
-                  textTheme: CustomTheme().lightTheme().textTheme.apply(
-                      fontSizeFactor: accessibilitySettings.fontSizeController),
-                ),
-            home: HomeScreen(),
+          final settings = AccessibilityController.of(context)!.settings;
+          return AnimatedBuilder(
+            //Combinando os varios ValueNotifier em apenas um Listenable para ouvir as alterações
+            //cria um único Listenable que notifica seus ouvintes sempre que qualquer um dos ValueNotifier que estão dentro dele mudar
+            // combinados muda ou seja se o fontsizecontroller ou contrast mudar ele build novamente
+            //ValueNotifier é uma implementação do meu Listenable
+            animation: Listenable.merge(
+                [settings.fontSizeController, settings.isContrast]),
+            builder: (context, child) {
+              return MaterialApp(
+                theme: CustomTheme()
+                    .lightTheme(isContrast: settings.isContrast.value)
+                    .copyWith(
+                      textTheme: CustomTheme().lightTheme().textTheme.apply(
+                            fontSizeFactor: settings.fontSizeController.value,
+                          ),
+                    ),
+                home: HomeScreen(),
+              );
+            },
           );
         },
       ),
@@ -92,11 +75,10 @@ class _MyAppState extends State<MyApp> {
 class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    final settings = AccessibilityController.of(context);
+    final settings = AccessibilityController.of(context)!;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Accessibility')),
-      backgroundColor: Theme.of(context).colorScheme.primary,
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -104,30 +86,31 @@ class HomeScreen extends StatelessWidget {
             Text('Example Text', style: Theme.of(context).textTheme.bodyLarge),
             ElevatedButton(
               onPressed: () {
-                double newFontSize =
-                    settings!.settings.fontSizeController + 0.1;
-                settings.updateFontSize(newFontSize);
+                settings.settings.fontSizeController.value =
+                    (settings.settings.fontSizeController.value + 0.1)
+                        .clamp(1.0, 1.5);
               },
               child: const Text('Increase Font Size'),
             ),
             ElevatedButton(
               onPressed: () {
-                double newFontSize =
-                    (settings!.settings.fontSizeController - 0.1)
-                        .clamp(1.0, 2.0);
-                settings.updateFontSize(newFontSize);
+                //.clamp(minino, maximo) - o tamanho da fonta vai diminuir apenas nesse intervalo
+                settings.settings.fontSizeController.value =
+                    (settings.settings.fontSizeController.value - 0.1)
+                        .clamp(1.0, 1.5);
               },
               child: const Text('Decrease Font Size'),
             ),
             ElevatedButton(
               onPressed: () {
-                settings!.updateFontSize(1.0);
+                settings.settings.fontSizeController.value = 1.0;
               },
               child: const Text('Reset Font Size'),
             ),
             ElevatedButton(
               onPressed: () {
-                settings!.toggleHighContrast();
+                settings.settings.isContrast.value =
+                    !settings.settings.isContrast.value;
               },
               child: const Text('High Contrast'),
             ),
@@ -149,7 +132,7 @@ class CustomTheme {
   }
 
   ColorScheme _colorScheme(bool isContrast) {
-    if (isContrast == true) {
+    if (isContrast) {
       return const ColorScheme(
         primary: Color(0xFF6200EE),
         secondary: Color(0xFF03DAC6),
@@ -175,20 +158,6 @@ class CustomTheme {
       );
     }
   }
-
-  // ColorScheme _colorSchemeContrast() {
-  //   return const ColorScheme(
-  //     primary: Color.fromARGB(255, 83, 70, 102),
-  //     secondary: Color.fromARGB(255, 101, 113, 112),
-  //     surface: Color.fromARGB(255, 108, 102, 102),
-  //     error: Color(0xFFB00020),
-  //     onPrimary: Color.fromARGB(255, 139, 115, 115),
-  //     onSecondary: Colors.black,
-  //     onSurface: Colors.black,
-  //     onError: Color.fromARGB(255, 182, 101, 101),
-  //     brightness: Brightness.light,
-  //   );
-  // }
 
   TextTheme _textTheme() {
     return const TextTheme(
